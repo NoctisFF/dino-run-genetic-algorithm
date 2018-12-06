@@ -1,13 +1,11 @@
 import neat
 import time
 import pickle
-import sys
 import glob
 import os
 import cv2
 import numpy as np
 from PIL import ImageGrab
-import test
 from selenium import webdriver
 from pynput.keyboard import Key, Controller, Listener
 
