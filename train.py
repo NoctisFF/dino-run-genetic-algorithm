@@ -6,8 +6,8 @@ import glob
 import os
 import cv2
 import numpy as np
-import threading
 from PIL import ImageGrab
+import test
 from selenium import webdriver
 from pynput.keyboard import Key, Controller, Listener
 
@@ -17,7 +17,6 @@ match_threshold = 0.8
 generation = 0
 max_fitness = 0
 best_genome = 0
-score = 0
 
 moves = 0
 
@@ -39,11 +38,10 @@ for file in files:
     object_traces.append(temp)
 
 def on_press(key):
-    pass
+    Controller.release(Key.down)
 
 def on_release(key):
     global moves
-    print 'ACTION!!!!!'
     moves += 1
     return False
 
@@ -54,6 +52,7 @@ def game(genome, config):
     net = neat.nn.FeedForwardNetwork.create(genome, config)
 
     driver = webdriver.Chrome()
+    driver.implicitly_wait(10)
     driver.set_window_size(240, 320)
     driver.get("chrome://dino/")
     keyboard = Controller()
@@ -61,11 +60,14 @@ def game(genome, config):
 
     time.sleep(2)
 
-    global score
     global object_coord
-    object_coord = 0
     global dino_coord
-    dino_coord = 0
+    global delay
+    max_speed = 100
+    velocity_coeff = 1
+    speed = 0
+    delay = time.time()
+    sec = time.time()
 
     object_coord = (0, 0)
     start_time = time.time()
@@ -90,67 +92,57 @@ def game(genome, config):
             for object_tr in zip(*loc_object[::-1]):
                 object_coord = object_tr[0], object_tr[1]
 
-        input = (dino_coord[0], dino_coord[1], object_coord[0], object_coord[1])
+        if time.time() - sec >= 1 and time.time() - start_time < max_speed:
+            speed += velocity_coeff
+            sec = time.time()
 
-        fitness = int(round(time.time() - start_time))*10
+        input = (object_coord[0] - dino_coord[0], dino_coord[1], object_coord[1], speed)
+
+        distance = int(round(time.time() - start_time))*10
 
         if driver.execute_script("return Runner.instance_.crashed") == True:
-            listener.stop()
+            if listener.is_alive() == True:
+                listener.stop()
             driver.close()
             driver.quit()
             actions = moves
-            print 'Fitness: ' + str(fitness)
+            print 'Distance: ' + str(distance)
             print 'Actions: ' + str(actions)
             moves = 0
-            return fitness - actions
+            return distance # - actions
 
         output = net.activate(input)
+        print output[0]
 
-        if output[0] > 0.5:
+        if output[0] > 0.9:
             keyboard.press(Key.space)
-            time.sleep(0.5)
-            keyboard.release(Key.space)
-            listener.stop()
-        else:
-            pass
-        if output[1] > 0.5:
+            delay = time.time()
+        elif output[0] < 0.1:
             keyboard.press(Key.down)
-            time.sleep(0.5)
-            keyboard.release(Key.down)
-            listener.stop()
+            delay = time.time()
         else:
             pass
-
-        listener.stop()
-
 
 def eval_genoms(genomes, config):
 
-    i = 0
-
-    global score
-    global generation, max_fitness, best_genome
-
+    global max_fitness, generation, best_genome
     generation += 1
+
     for genome_id, genome in genomes:
 
         genome.fitness = game(genome, config)
-        print ("Gen : %d Genome # : %d  Fitness : %f Max Fitness : %f"%(generation,i,genome.fitness, max_fitness))
+        print ("Gen : %d Genome # : %d  Fitness : %f Max Fitness : %f"%(generation,genome_id,genome.fitness, max_fitness))
         if genome.fitness >= max_fitness:
             max_fitness = genome.fitness
             best_genome = genome
-        score = 0
-        i += 1
 
-config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
-                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
-                         'config')
+config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction, neat.DefaultSpeciesSet, neat.DefaultStagnation, 'config')
 
 pop = neat.Population(config)
 stats = neat.StatisticsReporter()
 pop.add_reporter(stats)
 
-winner = pop.run(eval_genoms, 10)
+winner = pop.run(eval_genoms, 40)
 
 serialNo = len(os.listdir(home))+1
 outputFile = open(str(serialNo)+'_'+str(int(max_fitness))+'.p', 'wb')
